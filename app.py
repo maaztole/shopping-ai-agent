@@ -1,16 +1,50 @@
+
 import os
 import json
+import requests
+import pandas as pd
 import streamlit as st
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
 
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
+st.set_page_config(
+    page_title="AI Shopping Assistant",
+    page_icon="🛍️",
+    layout="wide"
 )
 
+load_dotenv()
+
+
+def get_api_key(key_name):
+
+    # First check local .env file
+    value = os.getenv(key_name)
+
+    if value:
+        return value
+
+    # Then check Streamlit Cloud Secrets
+    try:
+        return st.secrets.get(key_name)
+
+    except Exception:
+        return None
+
+
 def understand_query(user_query):
+
+    api_key = get_api_key("OPENAI_API_KEY")
+
+    if not api_key:
+        raise ValueError(
+            "OpenAI API key is missing. "
+            "Please configure it in Streamlit Secrets."
+        )
+
+    client = OpenAI(api_key=api_key)
 
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
@@ -20,10 +54,12 @@ def understand_query(user_query):
                 "role": "system",
                 "content": """
                 Extract shopping product information.
+
                 Return JSON with:
                 product_name,
                 specifications,
                 search_query.
+
                 Do not invent missing specifications.
                 """
             },
@@ -38,16 +74,23 @@ def understand_query(user_query):
 
     return json.loads(result)
 
-import requests
 
 def search_products(search_query):
+
+    api_key = get_api_key("SERPAPI_API_KEY")
+
+    if not api_key:
+        raise ValueError(
+            "SerpAPI key is missing. "
+            "Please configure it in Streamlit Secrets."
+        )
 
     url = "https://serpapi.com/search.json"
 
     params = {
         "engine": "google_shopping",
         "q": search_query,
-        "api_key": os.getenv("SERPAPI_API_KEY"),
+        "api_key": api_key,
         "gl": "in",
         "hl": "en"
     }
@@ -64,7 +107,7 @@ def search_products(search_query):
 
     return data.get("shopping_results", [])
 
-import pandas as pd
+
 
 def compare_prices(products):
 
@@ -75,6 +118,11 @@ def compare_prices(products):
         price = product.get("extracted_price")
 
         if price is None:
+            continue
+
+        try:
+            price = float(price)
+        except (ValueError, TypeError):
             continue
 
         rows.append({
@@ -94,17 +142,18 @@ def compare_prices(products):
 
     return df
 
-st.set_page_config(
-    page_title="AI Shopping Assistant",
-    page_icon="🛍️",
-    layout="wide"
-)
+
 
 st.title("🛍️ AI Shopping Price Comparison Agent")
 
 st.write(
     "Search for a product and compare "
-    "available shopping prices."
+    "available shopping prices across listings."
+)
+
+st.info(
+    "Enter a product name to find available "
+    "shopping listings and compare their prices."
 )
 
 user_query = st.text_input(
@@ -112,7 +161,7 @@ user_query = st.text_input(
     placeholder="Example: iPhone 17 Pro 256GB"
 )
 
-if st.button("Compare Prices"):
+if st.button("🔍 Compare Prices", type="primary"):
 
     if not user_query.strip():
 
@@ -120,69 +169,80 @@ if st.button("Compare Prices"):
 
     else:
 
-        with st.spinner("Understanding your search..."):
+        try:
 
-            try:
+            with st.spinner("Understanding your search..."):
+
                 details = understand_query(user_query)
 
-                st.subheader("AI understood your request")
+            st.subheader("AI understood your request")
+            st.json(details)
 
-                st.json(details)
+            search_query = details.get(
+                "search_query",
+                user_query
+            )
 
-                search_query = details.get(
-                    "search_query",
-                    user_query
-                )
+            with st.spinner("Searching shopping listings..."):
 
-                with st.spinner("Searching shopping listings..."):
+                products = search_products(search_query)
 
-                    products = search_products(search_query)
+            if not products:
 
-                if not products:
+                st.warning("No shopping results found.")
 
-                    st.warning("No shopping results found.")
+            else:
+
+                df = compare_prices(products)
+
+                if df.empty:
+
+                    st.warning(
+                        "No usable numeric prices were found."
+                    )
 
                 else:
 
-                    df = compare_prices(products)
+                    st.subheader("Price Comparison")
 
-                    if df.empty:
+                    display_df = df.drop(columns=["Link"])
 
-                        st.warning(
-                            "No usable numeric prices found."
+                    st.dataframe(
+                        display_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    cheapest = df.iloc[0]
+
+                    st.success(
+                        f"Lowest listed price: "
+                        f"₹{cheapest['Price']:,.2f}"
+                    )
+
+                    if cheapest["Link"]:
+
+                        st.markdown(
+                            f"[View product on "
+                            f"{cheapest['Seller']}]"
+                            f"({cheapest['Link']})"
                         )
 
-                    else:
+                    st.caption(
+                        "Prices are retrieved shopping listings. "
+                        "Verify the final price, availability, "
+                        "shipping and seller details at checkout."
+                    )
 
-                        st.subheader("Price Comparison")
+        except Exception as error:
 
-                        st.dataframe(
-                            df,
-                            use_container_width=True,
-                            hide_index=True
-                        )
+            st.error(f"Something went wrong: {error}")
 
-                        cheapest = df.iloc[0]
 
-                        st.success(
-                            f"Lowest listed price: "
-                            f"₹{cheapest['Price']:,.2f}"
-                        )
 
-                        if cheapest["Link"]:
-                            st.markdown(
-                                f"[View product on "
-                                f"{cheapest['Seller']}]"
-                                f"({cheapest['Link']})"
-                            )
+st.divider()
 
-                        st.caption(
-                            "Prices are retrieved search listings. "
-                            "Verify the final price, availability, "
-                            "shipping and seller details at checkout."
-                        )
-
-            except Exception as error:
-
-                st.error(f"Something went wrong: {error}")
-
+st.caption(
+    "AI-Powered Shopping Price Comparison Agent | "
+    "Product prices may change."
+)
