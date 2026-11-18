@@ -6,8 +6,12 @@ import pandas as pd
 import streamlit as st
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
+# -------------------------------
+# 1. Page configuration
+# -------------------------------
 
 st.set_page_config(
     page_title="AI Shopping Assistant",
@@ -18,62 +22,77 @@ st.set_page_config(
 load_dotenv()
 
 
+# -------------------------------
+# 2. Read API keys safely
+# -------------------------------
+
 def get_api_key(key_name):
 
-    # First check local .env file
-    value = os.getenv(key_name)
-
-    if value:
-        return value
-
-    # Then check Streamlit Cloud Secrets
+    # Check Streamlit Cloud Secrets first
     try:
-        return st.secrets.get(key_name)
-
+        value = st.secrets.get(key_name)
+        if value:
+            return str(value)
     except Exception:
-        return None
+        pass
 
+    # Check local .env file
+    return os.getenv(key_name)
+
+
+# -------------------------------
+# 3. Gemini AI integration
+# -------------------------------
 
 def understand_query(user_query):
 
-    api_key = get_api_key("OPENAI_API_KEY")
+    api_key = get_api_key("GEMINI_API_KEY")
 
     if not api_key:
         raise ValueError(
-            "OpenAI API key is missing. "
-            "Please configure it in Streamlit Secrets."
+            "Gemini API key is missing. "
+            "Add GEMINI_API_KEY to Streamlit Secrets."
         )
 
-    client = OpenAI(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": """
-                Extract shopping product information.
+    prompt = f"""
+    You are an AI shopping assistant.
 
-                Return JSON with:
-                product_name,
-                specifications,
-                search_query.
+    Extract shopping product information from this query.
 
-                Do not invent missing specifications.
-                """
-            },
-            {
-                "role": "user",
-                "content": user_query
-            }
-        ]
+    Return valid JSON containing exactly these fields:
+    - product_name
+    - specifications
+    - search_query
+
+    Rules:
+    - Do not invent missing specifications.
+    - Use an empty string or empty object
+      when information is unavailable.
+    - Make search_query suitable for Google Shopping.
+    - Return JSON only.
+
+    User query: {user_query}
+    """
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json"
+        )
     )
 
-    result = response.choices[0].message.content
+    if not response.text:
+        raise ValueError("Gemini returned an empty response.")
 
-    return json.loads(result)
+    return json.loads(response.text)
 
+
+# -------------------------------
+# 4. SerpAPI shopping search
+# -------------------------------
 
 def search_products(search_query):
 
@@ -82,7 +101,7 @@ def search_products(search_query):
     if not api_key:
         raise ValueError(
             "SerpAPI key is missing. "
-            "Please configure it in Streamlit Secrets."
+            "Add SERPAPI_API_KEY to Streamlit Secrets."
         )
 
     url = "https://serpapi.com/search.json"
@@ -105,9 +124,15 @@ def search_products(search_query):
 
     data = response.json()
 
+    if "error" in data:
+        raise ValueError(data["error"])
+
     return data.get("shopping_results", [])
 
 
+# -------------------------------
+# 5. Compare product prices
+# -------------------------------
 
 def compare_prices(products):
 
@@ -143,17 +168,15 @@ def compare_prices(products):
     return df
 
 
+# -------------------------------
+# 6. Streamlit interface
+# -------------------------------
 
 st.title("🛍️ AI Shopping Price Comparison Agent")
 
 st.write(
     "Search for a product and compare "
-    "available shopping prices across listings."
-)
-
-st.info(
-    "Enter a product name to find available "
-    "shopping listings and compare their prices."
+    "available shopping prices."
 )
 
 user_query = st.text_input(
@@ -161,7 +184,7 @@ user_query = st.text_input(
     placeholder="Example: iPhone 17 Pro 256GB"
 )
 
-if st.button("🔍 Compare Prices", type="primary"):
+if st.button("Compare Prices"):
 
     if not user_query.strip():
 
@@ -171,7 +194,7 @@ if st.button("🔍 Compare Prices", type="primary"):
 
         try:
 
-            with st.spinner("Understanding your search..."):
+            with st.spinner("Gemini is understanding your search..."):
 
                 details = understand_query(user_query)
 
@@ -179,9 +202,8 @@ if st.button("🔍 Compare Prices", type="primary"):
             st.json(details)
 
             search_query = details.get(
-                "search_query",
-                user_query
-            )
+                "search_query"
+            ) or user_query
 
             with st.spinner("Searching shopping listings..."):
 
@@ -198,17 +220,15 @@ if st.button("🔍 Compare Prices", type="primary"):
                 if df.empty:
 
                     st.warning(
-                        "No usable numeric prices were found."
+                        "No usable numeric prices found."
                     )
 
                 else:
 
                     st.subheader("Price Comparison")
 
-                    display_df = df.drop(columns=["Link"])
-
                     st.dataframe(
-                        display_df,
+                        df,
                         use_container_width=True,
                         hide_index=True
                     )
@@ -229,7 +249,7 @@ if st.button("🔍 Compare Prices", type="primary"):
                         )
 
                     st.caption(
-                        "Prices are retrieved shopping listings. "
+                        "Prices are retrieved search listings. "
                         "Verify the final price, availability, "
                         "shipping and seller details at checkout."
                     )
@@ -237,12 +257,3 @@ if st.button("🔍 Compare Prices", type="primary"):
         except Exception as error:
 
             st.error(f"Something went wrong: {error}")
-
-
-
-st.divider()
-
-st.caption(
-    "AI-Powered Shopping Price Comparison Agent | "
-    "Product prices may change."
-)
