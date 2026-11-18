@@ -1,0 +1,6 @@
+streamlit
+openai
+google-search-results
+python-dotenv
+pandas
+requests
