@@ -1,6 +1,5 @@
 streamlit
-openai
-google-search-results
-python-dotenv
-pandas
+google-genai
 requests
+pandas
+python-dotenv
