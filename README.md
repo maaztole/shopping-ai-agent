@@ -42,18 +42,18 @@ The application follows this workflow:
           USER
             |
             v
-  Product Search Query
+    Product Search Query
             |
             v
-   Google Gemini AI
-  (Query Understanding)
+    Google Gemini AI
+     (Query Understanding)
             |
             v
        SerpAPI
-  (Shopping Search Results)
+    (Shopping Search Results)
             |
             v
-   Product Data Extraction
+    Product Data Extraction
             |
             v
     Price Comparison
