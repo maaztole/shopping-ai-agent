@@ -10,9 +10,6 @@ from google import genai
 from google.genai import types
 
 
-# =====================================
-# 1. PAGE CONFIGURATION
-# =====================================
 
 st.set_page_config(
     page_title="AI Shopping Assistant",
@@ -23,9 +20,6 @@ st.set_page_config(
 load_dotenv()
 
 
-# =====================================
-# 2. API KEY MANAGEMENT
-# =====================================
 
 def get_api_key(key_name):
 
@@ -43,9 +37,6 @@ def get_api_key(key_name):
     return os.getenv(key_name)
 
 
-# =====================================
-# 3. GEMINI AI INTEGRATION
-# =====================================
 
 def understand_query(user_query):
 
@@ -109,9 +100,6 @@ def understand_query(user_query):
     return result
 
 
-# =====================================
-# 4. SERPAPI SHOPPING SEARCH
-# =====================================
 
 def search_products(search_query):
 
@@ -149,9 +137,6 @@ def search_products(search_query):
     return data.get("shopping_results", [])
 
 
-# =====================================
-# 5. PRICE COMPARISON
-# =====================================
 
 def compare_prices(products):
 
@@ -198,9 +183,6 @@ def compare_prices(products):
     return df
 
 
-# =====================================
-# 6. STREAMLIT USER INTERFACE
-# =====================================
 
 st.title("🛍️ AI Shopping Price Comparison Agent")
 
@@ -222,9 +204,6 @@ compare_button = st.button(
 )
 
 
-# =====================================
-# 7. MAIN APPLICATION
-# =====================================
 
 if compare_button:
 
@@ -352,9 +331,6 @@ if compare_button:
             )
 
 
-# =====================================
-# 8. FOOTER
-# =====================================
 
 st.divider()
 
